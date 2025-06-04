@@ -181,10 +181,10 @@ fn logs(containers: Option<Vec<String>>, tail: u32, all: bool) -> anyhow::Result
                         let _ = tx.send(if use_color {
                             color_println_fmt(
                                 Color::Red,
-                                &format!("[ERROR] - Failed to log {}", container_name),
+                                &format!("[ERROR] - Failed to log {container_name}"),
                             )
                         } else {
-                            format!("[ERROR] - Failed to log {}", container_name)
+                            format!("[ERROR] - Failed to log {container_name}")
                         });
                         return;
                     }
@@ -220,7 +220,7 @@ fn logs(containers: Option<Vec<String>>, tail: u32, all: bool) -> anyhow::Result
         drop(tx);
 
         for log_line in rx {
-            println!("{}", log_line);
+            println!("{log_line}");
         }
 
         for handle in handles {
@@ -373,31 +373,31 @@ fn update(containers: Option<Vec<String>>, all: bool) -> anyhow::Result<()> {
         }
 
         if use_color {
-            color_println(Color::Green, &format!("Restarting {}", DSP));
+            color_println(Color::Green, &format!("Restarting {DSP}"));
         } else {
-            println!("Restarting {}", DSP)
+            println!("Restarting {DSP}")
         }
 
         // containers updated, restart docker-stack-deploy to deploy new image
         Command::new(DOCKER)
             .args(["restart", DSP])
             .status()
-            .context(format!("Failed to restart {}", DSP))?;
+            .context(format!("Failed to restart {DSP}"))?;
     } else if let Some(containers) = containers {
         for container in &containers {
             update_container_by_name(container)?;
         }
         if use_color {
-            color_println(Color::Green, &format!("Restarting {}", DSP));
+            color_println(Color::Green, &format!("Restarting {DSP}"));
         } else {
-            println!("Restarting {}", DSP);
+            println!("Restarting {DSP}");
         }
 
         // containers updated, restart docker-stack-deploy to deploy new image
         Command::new(DOCKER)
             .args(["restart", DSP])
             .status()
-            .context(format!("Failed to restart {}", DSP))?;
+            .context(format!("Failed to restart {DSP}"))?;
     } else {
         anyhow::bail!("Must specify containers or use --all (-a)")
     }
