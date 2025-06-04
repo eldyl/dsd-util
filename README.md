@@ -21,6 +21,5 @@ Options:
 
 ## TODO
 
-- [ ] Init command -> Initialize a new deployment of docker-stack-deploy.
 - [ ] Improve docs
 - [ ] Create binary on release through github actions
