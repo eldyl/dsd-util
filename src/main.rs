@@ -227,17 +227,88 @@ fn logs(containers: Option<Vec<String>>, tail: u32, all: bool) -> anyhow::Result
             let _ = handle.join();
         }
     } else if let Some(containers) = containers {
-        // TODO: Use threads and create same format for viewing logs as when using --all
-        for container in &containers {
+        if use_color {
             color_println(
                 Color::Cyan,
-                &format!("Following logs for container: {}", &container),
+                &format!("Following logs for container: {}", &containers.len()),
             );
+        } else {
+            println!("Following logs for container: {}", &containers.len());
+        }
 
-            Command::new(DOCKER)
-                .args(["logs", container, "--tail", &tail.to_string(), "--follow"])
-                .status()
-                .context("Failed to start following logs")?;
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        let mut handles: Vec<std::thread::JoinHandle<()>> = vec![];
+
+        for container in containers {
+            let tx = tx.clone();
+            let container_id = container.clone();
+
+            let handle = std::thread::spawn(move || {
+                let container_name = match get_container_name(&container_id) {
+                    Ok(name) => name,
+                    Err(_) => container_id,
+                };
+
+                let mut logs_process = match Command::new(DOCKER)
+                    .args([
+                        "logs",
+                        &container_name,
+                        "--tail",
+                        &tail.to_string(),
+                        "--follow",
+                    ])
+                    .stdout(Stdio::piped())
+                    .spawn()
+                {
+                    Ok(proc) => proc,
+                    Err(_) => {
+                        let _ = tx.send(if use_color {
+                            color_println_fmt(
+                                Color::Red,
+                                &format!("[ERROR] - Failed to log {container_name}"),
+                            )
+                        } else {
+                            format!("[ERROR] - Failed to log {container_name}")
+                        });
+                        return;
+                    }
+                };
+
+                if let Some(stdout) = logs_process.stdout.take() {
+                    let reader = BufReader::new(stdout);
+                    for line in reader.lines().map_while(Result::ok) {
+                        if tx
+                            .send(if use_color {
+                                format!(
+                                    "[{} | {}] {}",
+                                    color_println_fmt(Color::Cyan, &get_timestamp()),
+                                    color_println_fmt(Color::Green, &container_name),
+                                    line
+                                )
+                            } else {
+                                format!("[{} | {}] {}", &get_timestamp(), &container_name, line)
+                            })
+                            .is_err()
+                        {
+                            break; // Receiver closed
+                        }
+                    }
+                }
+
+                let _ = logs_process.kill();
+                let _ = logs_process.wait();
+            });
+
+            handles.push(handle);
+        }
+        drop(tx);
+
+        for log_line in rx {
+            println!("{log_line}");
+        }
+
+        for handle in handles {
+            let _ = handle.join();
         }
     } else {
         anyhow::bail!("Must specify containers or use --all (-a)")
@@ -291,7 +362,8 @@ fn nuke() -> anyhow::Result<()> {
             "-f",
             PATH_DSP_COMPOSE,
             "logs",
-            "-f",
+            "--follow",
+            "--no-log-prefix",
             "--since",
             &start_time.to_string(),
         ])
@@ -302,7 +374,16 @@ fn nuke() -> anyhow::Result<()> {
     if let Some(stdout) = logs_process.stdout.take() {
         let reader = BufReader::new(stdout);
         for (i, line) in reader.lines().map_while(Result::ok).enumerate() {
-            println!("{line}");
+            if use_color {
+                println!(
+                    "[{} | {}] {}",
+                    color_println_fmt(Color::Cyan, &get_timestamp()),
+                    color_println_fmt(Color::Magenta, DSP),
+                    line
+                );
+            } else {
+                println!("[{} | {}] {}", &get_timestamp(), DSP, line);
+            }
             if line.contains("Already up to date") && i > 0 {
                 // first update check has happened after deployment
                 break;
