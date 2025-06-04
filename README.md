@@ -1,13 +1,14 @@
-# dsp-util 
+# dsd-util 
 
 This is a simple tool for my homelab that I use with [docker-stack-deploy](https://github.com/wez/docker-stack-deploy).
 
 ```bash
 A simple helper for managing your docker-stack-deploy containers.
 
-Usage: dsp-util <COMMAND>
+Usage: dsd-util <COMMAND>
 
 Commands:
+  init     Initialize and bootstrap a new instance of docker-stack-deploy
   logs     View container logs
   nuke     Kill all docker containers and redeploy docker-stack-deploy
   restart  Restart containers
@@ -18,3 +19,8 @@ Options:
   -h, --help     Print help
   -V, --version  Print version
 ```
+
+## TODO
+
+- [ ] Improve docs
+- [ ] Create binary on release through github actions

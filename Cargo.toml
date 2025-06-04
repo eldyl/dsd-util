@@ -1,5 +1,5 @@
 [package]
-name = "dsp-util"
+name = "dsd-util"
 version = "0.1.0"
 authors = ["Dylan Ullrich <dylan@eldyl.org>"]
 edition = "2024"
