@@ -101,6 +101,65 @@ fn init(project_dir: String, git_url: String) -> anyhow::Result<()> {
         .status()
         .context("Failed to bootstrap docker-stack-deploy")?;
 
+    println!();
+
+    let use_color = use_color();
+
+    if use_color {
+        color_println(
+            Color::Green,
+            "Bootstrap success! Following docker-stack-deploy logs...",
+        );
+    } else {
+        println!("Bootstrap success! Following docker-stack-deploy logs...")
+    }
+
+    println!();
+
+    let start_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .context("Failed to get current time")?
+        .as_secs();
+
+    // follow docker-stack-deploy logs until first update check has happened
+    let mut logs_process = Command::new(DOCKER)
+        .args([
+            "compose",
+            "-f",
+            PATH_DSP_COMPOSE,
+            "logs",
+            "--follow",
+            "--no-log-prefix",
+            "--since",
+            &start_time.to_string(),
+        ])
+        .stdout(Stdio::piped())
+        .spawn()
+        .context("Failed to start following logs")?;
+
+    if let Some(stdout) = logs_process.stdout.take() {
+        let reader = BufReader::new(stdout);
+        for (i, line) in reader.lines().map_while(Result::ok).enumerate() {
+            if use_color {
+                println!(
+                    "[{} | {}] {}",
+                    color_println_fmt(Color::Cyan, &get_timestamp()),
+                    color_println_fmt(Color::Magenta, DSP),
+                    line
+                );
+            } else {
+                println!("[{} | {}] {}", &get_timestamp(), DSP, line);
+            }
+            if line.contains("Already up to date") && i > 0 {
+                // first update check has happened after deployment
+                break;
+            }
+        }
+    }
+
+    let _ = logs_process.kill();
+    let _ = logs_process.wait();
+
     Ok(())
 }
 
