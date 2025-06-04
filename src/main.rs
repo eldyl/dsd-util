@@ -4,6 +4,7 @@ use clap::{Parser, Subcommand};
 use dsd_util::{color_println, color_println_fmt, Color};
 use std::io::{BufRead, BufReader, IsTerminal};
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 
 const DOCKER: &str = "docker";
 const DSD: &str = "docker-stack-deploy";
@@ -235,14 +236,14 @@ fn logs(containers: Option<Vec<String>>, tail: u32, all: bool) -> anyhow::Result
         let (tx, rx) = std::sync::mpsc::channel::<String>();
         let mut handles: Vec<std::thread::JoinHandle<()>> = vec![];
 
-        for container in &container_ids {
+        for container in container_ids {
             let tx = tx.clone();
-            let container_id = container.clone();
+            let container_id = Arc::new(container);
 
             let handle = std::thread::spawn(move || {
                 let container_name = match get_container_name(&container_id) {
-                    Ok(name) => name,
-                    Err(_) => container_id,
+                    Ok(name) => Arc::new(name),
+                    Err(_) => Arc::clone(&container_id),
                 };
                 let mut logs_process = match Command::new(DOCKER)
                     .args([
@@ -253,6 +254,7 @@ fn logs(containers: Option<Vec<String>>, tail: u32, all: bool) -> anyhow::Result
                         "--follow",
                     ])
                     .stdout(Stdio::piped())
+                    .stderr(Stdio::piped())
                     .spawn()
                 {
                     Ok(proc) => proc,
@@ -269,25 +271,76 @@ fn logs(containers: Option<Vec<String>>, tail: u32, all: bool) -> anyhow::Result
                     }
                 };
 
+                let mut inner_handles: Vec<std::thread::JoinHandle<()>> = vec![];
+
+                // handle stdout
                 if let Some(stdout) = logs_process.stdout.take() {
-                    let reader = BufReader::new(stdout);
-                    for line in reader.lines().map_while(Result::ok) {
-                        if tx
-                            .send(if use_color {
-                                format!(
-                                    "[{} | {}] {}",
-                                    color_println_fmt(Color::Cyan, &get_timestamp()),
-                                    color_println_fmt(Color::Green, &container_name),
-                                    line
-                                )
-                            } else {
-                                format!("[{} | {}] {}", &get_timestamp(), &container_name, line)
-                            })
-                            .is_err()
-                        {
-                            break; // Receiver closed
+                    let tx_stdout = tx.clone();
+                    let container_name_stdout = Arc::clone(&container_name);
+                    let handle_stdout = std::thread::spawn(move || {
+                        let reader = BufReader::new(stdout);
+                        for line in reader.lines().map_while(Result::ok) {
+                            if tx_stdout
+                                .send(if use_color {
+                                    format!(
+                                        "[{} | {}] {}",
+                                        color_println_fmt(Color::Cyan, &get_timestamp()),
+                                        color_println_fmt(Color::Green, &container_name_stdout),
+                                        line
+                                    )
+                                } else {
+                                    format!(
+                                        "[{} | {}] {}",
+                                        &get_timestamp(),
+                                        &container_name_stdout,
+                                        line
+                                    )
+                                })
+                                .is_err()
+                            {
+                                break; // Receiver closed
+                            }
                         }
-                    }
+                    });
+
+                    inner_handles.push(handle_stdout);
+                }
+
+                // handle stderr
+                if let Some(stderr) = logs_process.stderr.take() {
+                    let tx_stderr = tx.clone();
+                    let container_name_stderr = Arc::clone(&container_name);
+                    let handle_stderr = std::thread::spawn(move || {
+                        let reader = BufReader::new(stderr);
+                        for line in reader.lines().map_while(Result::ok) {
+                            if tx_stderr
+                                .send(if use_color {
+                                    format!(
+                                        "[{} | {}] {}",
+                                        color_println_fmt(Color::Cyan, &get_timestamp()),
+                                        color_println_fmt(Color::Green, &container_name_stderr),
+                                        line
+                                    )
+                                } else {
+                                    format!(
+                                        "[{} | {}] {}",
+                                        &get_timestamp(),
+                                        &container_name_stderr,
+                                        line
+                                    )
+                                })
+                                .is_err()
+                            {
+                                break; // Receiver closed
+                            }
+                        }
+                    });
+
+                    inner_handles.push(handle_stderr);
+                }
+
+                for handle in inner_handles {
+                    let _ = handle.join();
                 }
 
                 let _ = logs_process.kill();
