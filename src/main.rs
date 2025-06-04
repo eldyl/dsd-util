@@ -16,17 +16,18 @@ struct Cli {
     command: Commands,
 }
 
-// TODO: Add init feature - allow utility to setup an initial instance of docker-stack-deploy
-// $ docker run --rm -it \
-//     -v /var/run/docker.sock:/var/run/docker.sock \
-//     -v /var/lib/docker-stack-deploy:/var/lib/docker-stack-deploy \
-//     ghcr.io/wez/docker-stack-deploy \
-//     docker-stack-deploy bootstrap \
-//     --project-dir /var/lib/docker-stack-deploy \
-//     --git-url https://github.com/YOURNAME/REPO.git
-
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Initialize and bootstrap a new instance of docker-stack-deploy
+    Init {
+        /// Path where docker-stack-deploy compose file will be located
+        #[arg(long, default_value = "/var/lib/docker-stack-deploy")]
+        project_dir: String,
+
+        /// The git remote you want to utilize for docker-stack-deploy. Example: https://github.com/YOURNAME/REPO.git
+        git_url: String,
+    },
+
     // TODO: Add more arg options for logs - since, ?
     /// View container logs
     Logs {
@@ -71,6 +72,10 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Init {
+            project_dir,
+            git_url,
+        } => init(project_dir, git_url)?,
         Commands::Logs {
             containers,
             tail,
@@ -80,6 +85,21 @@ fn main() -> anyhow::Result<()> {
         Commands::Restart { containers, all } => restart(containers, all)?,
         Commands::Update { containers, all } => update(containers, all)?,
     }
+
+    Ok(())
+}
+
+fn init(project_dir: String, git_url: String) -> anyhow::Result<()> {
+    Command::new(DOCKER)
+        .args(["run", "--rm", "-it"])
+        .args(["-v", "/var/run/docker.sock:/var/run/docker.sock"])
+        .args(["-v", &format!("{project_dir}:{project_dir}")])
+        .args(["ghcr.io/wez/docker-stack-deploy"])
+        .args([DSP, "bootstrap"])
+        .args(["--project-dir", &project_dir])
+        .args(["--git-url", &git_url])
+        .status()
+        .context("Failed to bootstrap docker-stack-deploy")?;
 
     Ok(())
 }
