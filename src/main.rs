@@ -2,7 +2,7 @@ use anyhow::Context;
 use chrono::Local;
 use clap::{Parser, Subcommand};
 use dsp_util::{color_println, color_println_fmt, Color};
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, IsTerminal};
 use std::process::{Command, Stdio};
 
 const DOCKER: &str = "docker";
@@ -17,6 +17,13 @@ struct Cli {
 }
 
 // TODO: Add init feature - allow utility to setup an initial instance of docker-stack-deploy
+// $ docker run --rm -it \
+//     -v /var/run/docker.sock:/var/run/docker.sock \
+//     -v /var/lib/docker-stack-deploy:/var/lib/docker-stack-deploy \
+//     ghcr.io/wez/docker-stack-deploy \
+//     docker-stack-deploy bootstrap \
+//     --project-dir /var/lib/docker-stack-deploy \
+//     --git-url https://github.com/YOURNAME/REPO.git
 
 #[derive(Debug, Subcommand)]
 enum Commands {
@@ -79,7 +86,11 @@ fn main() -> anyhow::Result<()> {
 
 /// Lists currently running docker containers
 fn list_containers() -> anyhow::Result<Vec<String>> {
-    color_println(Color::Green, "Listing docker containers...");
+    if use_color() {
+        color_println(Color::Green, "Listing docker containers...");
+    } else {
+        println!("Listing docker containers...")
+    }
 
     // Use docker to list container_ids
     let container_ids = Command::new(DOCKER)
@@ -102,7 +113,11 @@ fn list_containers() -> anyhow::Result<Vec<String>> {
 
 /// Force removes all docker containers provided in argument
 fn kill_containers(container_ids: Vec<String>) -> anyhow::Result<()> {
-    color_println(Color::Yellow, "Killing docker containers...");
+    if use_color() {
+        color_println(Color::Yellow, "Killing docker containers...");
+    } else {
+        println!("Killing docker containers...")
+    }
 
     Command::new(DOCKER)
         .args(["rm", "-f"])
@@ -115,18 +130,28 @@ fn kill_containers(container_ids: Vec<String>) -> anyhow::Result<()> {
 
 /// Shows logs for specified containers
 fn logs(containers: Option<Vec<String>>, tail: u32, all: bool) -> anyhow::Result<()> {
+    let use_color = use_color();
+
     if all {
         let container_ids = list_containers()?;
 
         if container_ids.is_empty() {
-            color_println(Color::Red, "No containers running");
+            if use_color {
+                color_println(Color::Red, "No containers running");
+            } else {
+                println!("No containers running");
+            }
             return Ok(());
         }
 
-        color_println(
-            Color::Cyan,
-            &format!("Following logs for {} containers...", &container_ids.len()),
-        );
+        if use_color {
+            color_println(
+                Color::Cyan,
+                &format!("Following logs for {} containers...", &container_ids.len()),
+            );
+        } else {
+            println!("Following logs for {} containers...", &container_ids.len())
+        }
 
         let (tx, rx) = std::sync::mpsc::channel::<String>();
         let mut handles: Vec<std::thread::JoinHandle<()>> = vec![];
@@ -153,10 +178,14 @@ fn logs(containers: Option<Vec<String>>, tail: u32, all: bool) -> anyhow::Result
                 {
                     Ok(proc) => proc,
                     Err(_) => {
-                        let _ = tx.send(color_println_fmt(
-                            Color::Red,
-                            &format!("[ERROR] - Failed to log {}", container_name),
-                        ));
+                        let _ = tx.send(if use_color {
+                            color_println_fmt(
+                                Color::Red,
+                                &format!("[ERROR] - Failed to log {}", container_name),
+                            )
+                        } else {
+                            format!("[ERROR] - Failed to log {}", container_name)
+                        });
                         return;
                     }
                 };
@@ -165,12 +194,16 @@ fn logs(containers: Option<Vec<String>>, tail: u32, all: bool) -> anyhow::Result
                     let reader = BufReader::new(stdout);
                     for line in reader.lines().map_while(Result::ok) {
                         if tx
-                            .send(format!(
-                                "[{} | {}] {}",
-                                color_println_fmt(Color::Cyan, &get_timestamp()),
-                                color_println_fmt(Color::Green, &container_name),
-                                line
-                            ))
+                            .send(if use_color {
+                                format!(
+                                    "[{} | {}] {}",
+                                    color_println_fmt(Color::Cyan, &get_timestamp()),
+                                    color_println_fmt(Color::Green, &container_name),
+                                    line
+                                )
+                            } else {
+                                format!("[{} | {}] {}", &get_timestamp(), &container_name, line)
+                            })
                             .is_err()
                         {
                             break; // Receiver closed
@@ -223,7 +256,13 @@ fn nuke() -> anyhow::Result<()> {
         kill_containers(container_ids)?
     }
 
-    color_println(Color::Green, "Running docker-stack-deploy...");
+    let use_color = use_color();
+
+    if use_color {
+        color_println(Color::Green, "Running docker-stack-deploy...");
+    } else {
+        println!("Running docker-stack-deploy...")
+    }
 
     // run docker-stack-deploy
     Command::new(DOCKER)
@@ -231,10 +270,14 @@ fn nuke() -> anyhow::Result<()> {
         .status()
         .context("Failed to start docker-stack-deploy")?;
 
-    color_println(
-        Color::Green,
-        "Following logs until all containers deployed...",
-    );
+    if use_color {
+        color_println(
+            Color::Green,
+            "Following logs until all containers deployed...",
+        );
+    } else {
+        println!("Following logs until all containers deployed...")
+    }
 
     let start_time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -275,14 +318,20 @@ fn nuke() -> anyhow::Result<()> {
 
 /// Restarts specified docker containers
 fn restart(containers: Option<Vec<String>>, all: bool) -> anyhow::Result<()> {
+    let use_color = use_color();
+
     if all {
         let container_ids = list_containers()?;
 
         for container in &container_ids {
-            color_println(
-                Color::Cyan,
-                &format!("Restarting container: {}", &container),
-            );
+            if use_color {
+                color_println(
+                    Color::Cyan,
+                    &format!("Restarting container: {}", &container),
+                );
+            } else {
+                println!("Restarting container: {}", &container)
+            }
 
             Command::new(DOCKER)
                 .args(["restart", container])
@@ -291,10 +340,14 @@ fn restart(containers: Option<Vec<String>>, all: bool) -> anyhow::Result<()> {
         }
     } else if let Some(containers) = containers {
         for container in &containers {
-            color_println(
-                Color::Cyan,
-                &format!("Restarting container: {}", &container),
-            );
+            if use_color {
+                color_println(
+                    Color::Cyan,
+                    &format!("Restarting container: {}", &container),
+                );
+            } else {
+                println!("Restarting container: {}", &container)
+            }
 
             Command::new(DOCKER)
                 .args(["restart", container])
@@ -310,6 +363,8 @@ fn restart(containers: Option<Vec<String>>, all: bool) -> anyhow::Result<()> {
 
 /// Updates images of specified docker containers
 fn update(containers: Option<Vec<String>>, all: bool) -> anyhow::Result<()> {
+    let use_color = use_color();
+
     if all {
         let container_ids = list_containers()?;
 
@@ -317,7 +372,11 @@ fn update(containers: Option<Vec<String>>, all: bool) -> anyhow::Result<()> {
             update_container_by_name(container)?
         }
 
-        color_println(Color::Green, &format!("Restarting {}", DSP));
+        if use_color {
+            color_println(Color::Green, &format!("Restarting {}", DSP));
+        } else {
+            println!("Restarting {}", DSP)
+        }
 
         // containers updated, restart docker-stack-deploy to deploy new image
         Command::new(DOCKER)
@@ -328,8 +387,11 @@ fn update(containers: Option<Vec<String>>, all: bool) -> anyhow::Result<()> {
         for container in &containers {
             update_container_by_name(container)?;
         }
- 
-        color_println(Color::Green, &format!("Restarting {}", DSP));
+        if use_color {
+            color_println(Color::Green, &format!("Restarting {}", DSP));
+        } else {
+            println!("Restarting {}", DSP);
+        }
 
         // containers updated, restart docker-stack-deploy to deploy new image
         Command::new(DOCKER)
@@ -341,6 +403,12 @@ fn update(containers: Option<Vec<String>>, all: bool) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+// TODO: Only use colors when output is to terminal
+/// Determine if stdout is to terminal
+fn use_color() -> bool {
+    std::io::stdout().is_terminal()
 }
 
 /// Gets the current time on the system in readable format
@@ -380,13 +448,20 @@ fn update_container_by_name(container_name: &str) -> anyhow::Result<()> {
         .trim()
         .to_string();
 
-    color_println(
-        Color::Cyan,
-        &format!(
+    if use_color() {
+        color_println(
+            Color::Cyan,
+            &format!(
+                "Pulling latest image for {}: {}",
+                &container_name, &image_name
+            ),
+        );
+    } else {
+        println!(
             "Pulling latest image for {}: {}",
             &container_name, &image_name
-        ),
-    );
+        )
+    }
 
     // pull new image for container
     Command::new(DOCKER)
