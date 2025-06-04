@@ -212,7 +212,7 @@ fn kill_containers(container_ids: Vec<String>) -> anyhow::Result<()> {
 fn logs(containers: Option<Vec<String>>, tail: u32, all: bool) -> anyhow::Result<()> {
     let use_color = use_color();
 
-    if all {
+    let containers = if all {
         let container_ids = list_containers()?;
 
         if container_ids.is_empty() {
@@ -224,229 +224,167 @@ fn logs(containers: Option<Vec<String>>, tail: u32, all: bool) -> anyhow::Result
             return Ok(());
         }
 
-        if use_color {
-            color_println(
-                Color::Cyan,
-                &format!("Following logs for {} containers...", &container_ids.len()),
-            );
-        } else {
-            println!("Following logs for {} containers...", &container_ids.len())
-        }
-
-        let (tx, rx) = std::sync::mpsc::channel::<String>();
-        let mut handles: Vec<std::thread::JoinHandle<()>> = vec![];
-
-        for container in container_ids {
-            let tx = tx.clone();
-            let container_id = Arc::new(container);
-
-            let handle = std::thread::spawn(move || {
-                let container_name = match get_container_name(&container_id) {
-                    Ok(name) => Arc::new(name),
-                    Err(_) => Arc::clone(&container_id),
-                };
-                let mut logs_process = match Command::new(DOCKER)
-                    .args([
-                        "logs",
-                        &container_name,
-                        "--tail",
-                        &tail.to_string(),
-                        "--follow",
-                    ])
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .spawn()
-                {
-                    Ok(proc) => proc,
-                    Err(_) => {
-                        let _ = tx.send(if use_color {
-                            color_println_fmt(
-                                Color::Red,
-                                &format!("[ERROR] - Failed to log {container_name}"),
-                            )
-                        } else {
-                            format!("[ERROR] - Failed to log {container_name}")
-                        });
-                        return;
-                    }
-                };
-
-                let mut inner_handles: Vec<std::thread::JoinHandle<()>> = vec![];
-
-                // handle stdout
-                if let Some(stdout) = logs_process.stdout.take() {
-                    let tx_stdout = tx.clone();
-                    let container_name_stdout = Arc::clone(&container_name);
-                    let handle_stdout = std::thread::spawn(move || {
-                        let reader = BufReader::new(stdout);
-                        for line in reader.lines().map_while(Result::ok) {
-                            if tx_stdout
-                                .send(if use_color {
-                                    format!(
-                                        "[{} | {}] {}",
-                                        color_println_fmt(Color::Cyan, &get_timestamp()),
-                                        color_println_fmt(Color::Green, &container_name_stdout),
-                                        line
-                                    )
-                                } else {
-                                    format!(
-                                        "[{} | {}] {}",
-                                        &get_timestamp(),
-                                        &container_name_stdout,
-                                        line
-                                    )
-                                })
-                                .is_err()
-                            {
-                                break; // Receiver closed
-                            }
-                        }
-                    });
-
-                    inner_handles.push(handle_stdout);
-                }
-
-                // handle stderr
-                if let Some(stderr) = logs_process.stderr.take() {
-                    let tx_stderr = tx.clone();
-                    let container_name_stderr = Arc::clone(&container_name);
-                    let handle_stderr = std::thread::spawn(move || {
-                        let reader = BufReader::new(stderr);
-                        for line in reader.lines().map_while(Result::ok) {
-                            if tx_stderr
-                                .send(if use_color {
-                                    format!(
-                                        "[{} | {}] {}",
-                                        color_println_fmt(Color::Cyan, &get_timestamp()),
-                                        color_println_fmt(Color::Green, &container_name_stderr),
-                                        line
-                                    )
-                                } else {
-                                    format!(
-                                        "[{} | {}] {}",
-                                        &get_timestamp(),
-                                        &container_name_stderr,
-                                        line
-                                    )
-                                })
-                                .is_err()
-                            {
-                                break; // Receiver closed
-                            }
-                        }
-                    });
-
-                    inner_handles.push(handle_stderr);
-                }
-
-                for handle in inner_handles {
-                    let _ = handle.join();
-                }
-
-                let _ = logs_process.kill();
-                let _ = logs_process.wait();
-            });
-
-            handles.push(handle);
-        }
-        drop(tx);
-
-        for log_line in rx {
-            println!("{log_line}");
-        }
-
-        for handle in handles {
-            let _ = handle.join();
-        }
+        container_ids
     } else if let Some(containers) = containers {
-        if use_color {
-            color_println(
-                Color::Cyan,
-                &format!("Following logs for container: {}", &containers.len()),
-            );
-        } else {
-            println!("Following logs for container: {}", &containers.len());
-        }
-
-        let (tx, rx) = std::sync::mpsc::channel::<String>();
-        let mut handles: Vec<std::thread::JoinHandle<()>> = vec![];
-
-        for container in containers {
-            let tx = tx.clone();
-            let container_id = container.clone();
-
-            let handle = std::thread::spawn(move || {
-                let container_name = match get_container_name(&container_id) {
-                    Ok(name) => name,
-                    Err(_) => container_id,
-                };
-
-                let mut logs_process = match Command::new(DOCKER)
-                    .args([
-                        "logs",
-                        &container_name,
-                        "--tail",
-                        &tail.to_string(),
-                        "--follow",
-                    ])
-                    .stdout(Stdio::piped())
-                    .spawn()
-                {
-                    Ok(proc) => proc,
-                    Err(_) => {
-                        let _ = tx.send(if use_color {
-                            color_println_fmt(
-                                Color::Red,
-                                &format!("[ERROR] - Failed to log {container_name}"),
-                            )
-                        } else {
-                            format!("[ERROR] - Failed to log {container_name}")
-                        });
-                        return;
-                    }
-                };
-
-                if let Some(stdout) = logs_process.stdout.take() {
-                    let reader = BufReader::new(stdout);
-                    for line in reader.lines().map_while(Result::ok) {
-                        if tx
-                            .send(if use_color {
-                                format!(
-                                    "[{} | {}] {}",
-                                    color_println_fmt(Color::Cyan, &get_timestamp()),
-                                    color_println_fmt(Color::Green, &container_name),
-                                    line
-                                )
-                            } else {
-                                format!("[{} | {}] {}", &get_timestamp(), &container_name, line)
-                            })
-                            .is_err()
-                        {
-                            break; // Receiver closed
-                        }
-                    }
-                }
-
-                let _ = logs_process.kill();
-                let _ = logs_process.wait();
-            });
-
-            handles.push(handle);
-        }
-        drop(tx);
-
-        for log_line in rx {
-            println!("{log_line}");
-        }
-
-        for handle in handles {
-            let _ = handle.join();
-        }
+        containers
     } else {
         anyhow::bail!("Must specify containers or use --all (-a)")
+    };
+
+    if use_color {
+        color_println(
+            Color::Cyan,
+            &format!("Following logs for container: {}", &containers.len()),
+        );
+    } else {
+        println!("Following logs for container: {}", &containers.len());
+    }
+    let (tx, rx) = std::sync::mpsc::channel::<String>();
+    let mut handles: Vec<std::thread::JoinHandle<()>> = vec![];
+
+    for container in containers {
+        let tx = tx.clone();
+        let is_container_id = all;
+        let handle = spawn_container_logger(&container, is_container_id, use_color, tail, tx)
+            .with_context(|| format!("Failed to spawn container logger for {}", container))?;
+        handles.push(handle);
+    }
+
+    drop(tx);
+
+    for log_line in rx {
+        println!("{log_line}");
+    }
+
+    for handle in handles {
+        let _ = handle.join();
     }
 
     Ok(())
+}
+
+fn spawn_container_logger(
+    container: &str,
+    is_container_id: bool,
+    use_color: bool,
+    tail: u32,
+    tx: std::sync::mpsc::Sender<String>,
+) -> anyhow::Result<std::thread::JoinHandle<()>> {
+    let container_identifier = Arc::new(container.to_string());
+
+    let handle = std::thread::spawn(move || {
+        let container_name = if is_container_id {
+            match get_container_name(&container_identifier) {
+                Ok(name) => Arc::new(name),
+                Err(_) => Arc::clone(&container_identifier),
+            }
+        } else {
+            Arc::clone(&container_identifier)
+        };
+
+        let mut logs_process = match Command::new(DOCKER)
+            .args([
+                "logs",
+                &container_name,
+                "--tail",
+                &tail.to_string(),
+                "--follow",
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+        {
+            Ok(proc) => proc,
+            Err(_) => {
+                let _ = tx.send(if use_color {
+                    color_println_fmt(
+                        Color::Red,
+                        &format!("[ERROR] - Failed to log {container_name}"),
+                    )
+                } else {
+                    format!("[ERROR] - Failed to log {container_name}")
+                });
+                return;
+            }
+        };
+
+        let mut handles: Vec<std::thread::JoinHandle<()>> = vec![];
+
+        // handle stdout
+        if let Some(stdout) = logs_process.stdout.take() {
+            let tx_stdout = tx.clone();
+            let container_name_stdout = Arc::clone(&container_name);
+            let handle_stdout = std::thread::spawn(move || {
+                let reader = BufReader::new(stdout);
+                for line in reader.lines().map_while(Result::ok) {
+                    if tx_stdout
+                        .send(if use_color {
+                            format!(
+                                "[{} | {}] {}",
+                                color_println_fmt(Color::Cyan, &get_timestamp()),
+                                color_println_fmt(Color::Green, &container_name_stdout),
+                                line
+                            )
+                        } else {
+                            format!(
+                                "[{} | {}] {}",
+                                &get_timestamp(),
+                                &container_name_stdout,
+                                line
+                            )
+                        })
+                        .is_err()
+                    {
+                        break; // Receiver closed
+                    }
+                }
+            });
+
+            handles.push(handle_stdout);
+        }
+
+        // handle stderr
+        if let Some(stderr) = logs_process.stderr.take() {
+            let tx_stderr = tx.clone();
+            let container_name_stderr = Arc::clone(&container_name);
+            let handle_stderr = std::thread::spawn(move || {
+                let reader = BufReader::new(stderr);
+                for line in reader.lines().map_while(Result::ok) {
+                    if tx_stderr
+                        .send(if use_color {
+                            format!(
+                                "[{} | {}] {}",
+                                color_println_fmt(Color::Cyan, &get_timestamp()),
+                                color_println_fmt(Color::Green, &container_name_stderr),
+                                line
+                            )
+                        } else {
+                            format!(
+                                "[{} | {}] {}",
+                                &get_timestamp(),
+                                &container_name_stderr,
+                                line
+                            )
+                        })
+                        .is_err()
+                    {
+                        break; // Receiver closed
+                    }
+                }
+            });
+
+            handles.push(handle_stderr);
+        }
+
+        for handle in handles {
+            let _ = handle.join();
+        }
+
+        let _ = logs_process.kill();
+        let _ = logs_process.wait();
+    });
+
+    Ok(handle)
 }
 
 /// Kills all running containers, and then redeploys docker-stack-deploy
