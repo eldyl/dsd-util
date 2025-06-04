@@ -27,7 +27,7 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
-    // TODO: Add more arg options for logs - no_colors, since, ?
+    // TODO: Add more arg options for logs - since, ?
     /// View container logs
     Logs {
         /// View logs for specified container
