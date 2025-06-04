@@ -405,8 +405,6 @@ fn update(containers: Option<Vec<String>>, all: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-// TODO: Only use colors when output is to terminal
-/// Determine if stdout is to terminal
 fn use_color() -> bool {
     std::io::stdout().is_terminal()
 }
