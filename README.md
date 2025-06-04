@@ -1,11 +1,20 @@
-# docker-stack-deploy-clean-restart
+# dsp-util 
 
 This is a simple tool for my homelab that I use with [docker-stack-deploy](https://github.com/wez/docker-stack-deploy).
 
-This tool will kill all running docker containers on the host, and then run
-docker-stack-deploy.
+```bash
+A simple helper for managing your docker-stack-deploy containers.
 
-This tool should rarely be needed, but at times I want to kill all running 
-containers on a host and redeploy them with docker-stack-deploy.
+Usage: dsp-util <COMMAND>
 
-A simple bash script would suffice, but what's the fun in that?
+Commands:
+  logs     View container logs
+  nuke     Kill all docker containers and redeploy docker-stack-deploy
+  restart  Restart containers
+  update   Update containers
+  help     Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help
+  -V, --version  Print version
+```
