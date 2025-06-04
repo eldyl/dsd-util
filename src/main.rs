@@ -317,6 +317,8 @@ fn update(containers: Option<Vec<String>>, all: bool) -> anyhow::Result<()> {
             update_container_by_name(container)?
         }
 
+        color_println(Color::Green, &format!("Restarting {}", DSP));
+
         // containers updated, restart docker-stack-deploy to deploy new image
         Command::new(DOCKER)
             .args(["restart", DSP])
@@ -326,6 +328,9 @@ fn update(containers: Option<Vec<String>>, all: bool) -> anyhow::Result<()> {
         for container in &containers {
             update_container_by_name(container)?;
         }
+ 
+        color_println(Color::Green, &format!("Restarting {}", DSP));
+
         // containers updated, restart docker-stack-deploy to deploy new image
         Command::new(DOCKER)
             .args(["restart", DSP])
