@@ -16,8 +16,11 @@ struct Cli {
     command: Commands,
 }
 
+// TODO: Add init feature - allow utility to setup an initial instance of docker-stack-deploy
+
 #[derive(Debug, Subcommand)]
 enum Commands {
+    // TODO: Add more arg options for logs - no_colors, since, ?
     /// View container logs
     Logs {
         /// View logs for specified container
@@ -45,6 +48,7 @@ enum Commands {
         all: bool,
     },
 
+    // OPTIMIZE: Don't restart docker-stack-deploy if no containers were updated
     /// Update containers
     Update {
         /// Update specified container
@@ -190,6 +194,7 @@ fn logs(containers: Option<Vec<String>>, tail: u32, all: bool) -> anyhow::Result
             let _ = handle.join();
         }
     } else if let Some(containers) = containers {
+        // TODO: Use threads and create same format for viewing logs as when using --all
         for container in &containers {
             color_println(
                 Color::Cyan,

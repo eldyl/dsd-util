@@ -18,3 +18,9 @@ Options:
   -h, --help     Print help
   -V, --version  Print version
 ```
+
+## TODO
+
+- [ ] Init command -> Initialize a new deployment of docker-stack-deploy.
+- [ ] Improve docs
+- [ ] Create binary on release through github actions
