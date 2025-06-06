@@ -12,7 +12,7 @@ pub fn is_terminal() -> bool {
 
 /// Gets the current time on the system in readable format
 pub fn get_timestamp() -> String {
-    Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+    Local::now().format("%Y-%m-%dT%H:%M:%S").to_string()
 }
 
 /// Lists currently running docker containers
