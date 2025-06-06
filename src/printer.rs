@@ -9,6 +9,7 @@ pub enum Color {
     Yellow,
     Magenta,
     Cyan,
+    White,
 }
 
 /// Implement Color to match on proper ANSI code
@@ -22,6 +23,7 @@ impl Color {
             Color::Yellow => "\x1b[1;33m",
             Color::Magenta => "\x1b[1;35m",
             Color::Cyan => "\x1b[1;36m",
+            Color::White => "\x1b[1;37m",
         }
     }
 }
