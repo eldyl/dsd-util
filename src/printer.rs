@@ -1,3 +1,5 @@
+const ANSI_RESET: &str = "\x1b[0m"; // ANSI reset code
+
 /// Color options for printing to the terminal
 #[derive(Debug, Clone, Copy)]
 pub enum Color {
@@ -26,10 +28,10 @@ impl Color {
 
 /// Print line function that uses ANSI code to display colored text on terminal
 pub fn color_println(color: Color, text: &str) {
-    println!("{}{}\x1b[0m", color.code(), text);
+    println!("{}{}{}", color.code(), text, ANSI_RESET);
 }
 
 /// Format string function that uses ANSI code to return string formatted for color
 pub fn color_println_fmt(color: Color, text: &str) -> String {
-    format!("{}{}\x1b[0m", color.code(), text)
+    format!("{}{}{}", color.code(), text, ANSI_RESET)
 }
