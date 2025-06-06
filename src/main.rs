@@ -27,7 +27,7 @@ enum Commands {
     /// Initialize and bootstrap a new instance of docker-stack-deploy
     Init {
         /// Path where docker-stack-deploy compose file will be located
-        #[arg(long, default_value = "/var/lib/docker-stack-deploy")]
+        #[arg(long, default_value = DEFAULT_ARG_PROJECT_DIR)]
         project_dir: String,
 
         /// The git remote you want to utilize for docker-stack-deploy. Example: https://github.com/YOURNAME/REPO.git
@@ -37,7 +37,7 @@ enum Commands {
     // TODO: Add more arg options for logs - since, ?
     /// View container logs
     Logs {
-        /// View logs for specified container
+        /// View logs for specified containers
         containers: Option<Vec<String>>,
 
         /// View logs for specified stacks
@@ -45,7 +45,7 @@ enum Commands {
         stacks: Option<Vec<String>>,
 
         /// Set the number of lines to show from end of logs
-        #[arg(long, default_value = "100")]
+        #[arg(long, default_value = DEFAULT_ARG_TAIL)]
         tail: u32,
 
         /// View logs for all containers
