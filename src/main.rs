@@ -665,32 +665,43 @@ fn update(
         anyhow::bail!("Must specify containers or use --all (-a)")
     };
 
-    // parse output into clean String
-    let image_name = String::from_utf8(image_output.stdout)
-        .context("Failed to parse image name from output")?
-        .trim()
-        .to_string();
+    let use_color = use_color();
 
-    if use_color() {
-        color_println(
-            Color::Cyan,
-            &format!(
-                "Pulling latest image for {}: {}",
-                &container_name, &image_name
-            ),
-        );
-    } else {
-        println!(
-            "Pulling latest image for {}: {}",
-            &container_name, &image_name
-        )
+    let mut num_containers_updated = 0;
+
+    for container in &containers {
+        num_containers_updated += update_container_by_name(container)?;
     }
 
-    // pull new image for container
+    if num_containers_updated == 0 {
+        if use_color {
+            color_println(Color::Yellow, "No new container images to update");
+        } else {
+            println!("No new container images to pull");
+        }
+
+        return Ok(());
+    }
+
+    if use_color {
+        println!(
+            "{}: {}",
+            &color_println_fmt(Color::Cyan, "New images pulled"),
+            &color_println_fmt(Color::Green, &num_containers_updated.to_string())
+        );
+        println!();
+        color_println(Color::Green, &format!("Restarting {DSD}"));
+    } else {
+        println!("New images pulled: {}", num_containers_updated);
+        println!();
+        println!("Restarting {DSD}");
+    }
+
+    // containers updated, restart docker-stack-deploy to deploy new image
     Command::new(DOCKER)
-        .args(["pull", &image_name])
+        .args(["restart", DSD])
         .status()
-        .context(format!("Failed to pull image: {}", &image_name))?;
+        .context(format!("Failed to restart {DSD}"))?;
 
     Ok(())
 }
