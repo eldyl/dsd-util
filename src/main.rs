@@ -2,8 +2,9 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use dsd_util::printer::{color_println, color_println_fmt, Color};
 use dsd_util::utils::{
-    get_containers_from_stack, get_timestamp, kill_containers, list_containers,
-    spawn_container_logger, update_container_by_name, use_color,
+    get_containers_from_stack, get_timestamp, kill_containers, list_containers, parse_inspect_data,
+    parse_stats_data, spawn_container_logger, update_container_by_name, use_color, InspectData,
+    StatsData,
 };
 use dsd_util::DOCKER;
 use std::io::{BufRead, BufReader};
@@ -565,54 +566,6 @@ fn stats(
     }
 
     Ok(())
-}
-
-/// Shape of stats data
-#[derive(Debug, Clone)]
-struct StatsData {
-    container_name: String,
-    cpu: String,
-    memory: String,
-}
-
-/// Parse stats data
-fn parse_stats_data(stats: &str) -> anyhow::Result<StatsData> {
-    let parsed = stats
-        .trim_start_matches("/")
-        .split_whitespace()
-        .collect::<Vec<&str>>();
-
-    Ok(StatsData {
-        container_name: parsed[0].to_string(),
-        cpu: parsed[1].to_string(),
-        memory: parsed[2].to_string(),
-    })
-}
-
-/// Shape of inspected data
-#[derive(Debug, Clone)]
-struct InspectData {
-    container_name: String,
-    image: String,
-    status: String,
-    restart_policy: String,
-    ip_address: String,
-}
-
-/// Parses inspected data
-fn parse_inspect_data(stats: &str) -> anyhow::Result<InspectData> {
-    let parsed = stats
-        .trim_start_matches("/")
-        .split(",")
-        .collect::<Vec<&str>>();
-
-    Ok(InspectData {
-        container_name: parsed[0].to_string(),
-        image: parsed[1].to_string(),
-        status: parsed[2].to_string(),
-        restart_policy: parsed[3].to_string(),
-        ip_address: parsed[4].to_string(),
-    })
 }
 
 /// Updates images of specified docker containers

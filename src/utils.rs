@@ -271,3 +271,51 @@ pub fn spawn_container_logger(
 
     Ok(handle)
 }
+
+/// Shape of stats data
+#[derive(Debug, Clone)]
+pub struct StatsData {
+    pub container_name: String,
+    pub cpu: String,
+    pub memory: String,
+}
+
+/// Parse stats data
+pub fn parse_stats_data(stats: &str) -> anyhow::Result<StatsData> {
+    let parsed = stats
+        .trim_start_matches("/")
+        .split_whitespace()
+        .collect::<Vec<&str>>();
+
+    Ok(StatsData {
+        container_name: parsed[0].to_string(),
+        cpu: parsed[1].to_string(),
+        memory: parsed[2].to_string(),
+    })
+}
+
+/// Shape of inspected data
+#[derive(Debug, Clone)]
+pub struct InspectData {
+    pub container_name: String,
+    pub image: String,
+    pub status: String,
+    pub restart_policy: String,
+    pub ip_address: String,
+}
+
+/// Parses inspected data
+pub fn parse_inspect_data(stats: &str) -> anyhow::Result<InspectData> {
+    let parsed = stats
+        .trim_start_matches("/")
+        .split(",")
+        .collect::<Vec<&str>>();
+
+    Ok(InspectData {
+        container_name: parsed[0].to_string(),
+        image: parsed[1].to_string(),
+        status: parsed[2].to_string(),
+        restart_policy: parsed[3].to_string(),
+        ip_address: parsed[4].to_string(),
+    })
+}
