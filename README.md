@@ -12,15 +12,14 @@ Commands:
   logs     View container logs
   nuke     Kill all docker containers and redeploy docker-stack-deploy
   restart  Restart containers
-  update   Update containers
+  stats    View basic stats for docker containers
+  update   Update container images
   help     Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help     Print help
-  -V, --version  Print version
 ```
 
 ## TODO
 
 - [ ] Improve docs
-- [ ] Create binary on release through github actions
