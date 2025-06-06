@@ -122,7 +122,7 @@ pub fn logs(
 
         containers
     } else {
-        anyhow::bail!("Must specify containers or use --all (-a)")
+        anyhow::bail!("Must specify containers, use --stacks (-s) or use --all (-a)")
     };
 
     if use_color {
@@ -274,7 +274,7 @@ pub fn restart(
 
         containers
     } else {
-        anyhow::bail!("Must specify containers or use --all (-a)")
+        anyhow::bail!("Must specify containers, use --stacks (-s) or use --all (-a)")
     };
 
     let use_color = is_terminal();
@@ -441,6 +441,8 @@ pub fn stats(
                         color_println_fmt(Color::Green, &inspect.health)
                     } else if &inspect.health.to_lowercase() == "unhealthy" {
                         color_println_fmt(Color::Red, &inspect.health)
+                    } else if &inspect.health.to_lowercase() == "starting" {
+                        color_println_fmt(Color::Cyan, &inspect.health)
                     } else {
                         color_println_fmt(Color::White, &inspect.health)
                     }
@@ -486,6 +488,7 @@ pub fn stats(
 
     println!();
 
+    // TODO: sort - probably want to use BTreeMap instead
     for key in total_stats_map.keys() {
         let container = total_stats_map.get(key).context("Failed to get item")?;
 
@@ -525,7 +528,7 @@ pub fn update(
 
         containers
     } else {
-        anyhow::bail!("Must specify containers or use --all (-a)")
+        anyhow::bail!("Must specify containers, use --stacks (-s) or use --all (-a)")
     };
 
     let use_color = is_terminal();
