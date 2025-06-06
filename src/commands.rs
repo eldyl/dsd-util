@@ -346,6 +346,7 @@ pub fn stats(
         anyhow::bail!("Must specify containers, use --stacks (-s) or use --all (-a)")
     };
 
+    // stats format from docker cli
     let stats_output = Command::new(DOCKER)
         .args([
             "stats",
@@ -357,6 +358,7 @@ pub fn stats(
         .output()
         .context("Failed to get stats for containers")?;
 
+    // inspect format from docker cli
     let inspect_format = concat!(
         "{{.Name}},",
         "{{.State.Status}},",
