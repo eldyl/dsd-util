@@ -34,7 +34,7 @@ enum Commands {
         git_url: String,
     },
 
-    // TODO: Add more arg options for logs - since, ?
+    // TODO: Add more arg options for logs - since, filter, follow ?
     /// View container logs
     Logs {
         /// View logs for specified containers
@@ -53,6 +53,7 @@ enum Commands {
         all: bool,
     },
 
+    // TODO: confirm nuke
     /// Kill all docker containers and redeploy docker-stack-deploy
     Nuke,
 
@@ -70,10 +71,21 @@ enum Commands {
         all: bool,
     },
 
-    // OPTIMIZE: Don't restart docker-stack-deploy if no containers were updated
-    /// Update containers
+    /// View basic stats for docker containers
+    Stats {
+        /// View stats for specified containers
+        containers: Option<Vec<String>>,
+
+        /// View stats for specified stacks
         #[arg(long)]
         stacks: Option<Vec<String>>,
+
+        /// View stats for all containers
+        #[arg(long)]
+        all: bool,
+    },
+
+    /// Update container images
     Update {
         /// Update specified containers
         containers: Option<Vec<String>>,
@@ -108,6 +120,11 @@ fn main() -> anyhow::Result<()> {
             stacks,
             all,
         } => restart(containers, stacks, all)?,
+        Commands::Stats {
+            containers,
+            stacks,
+            all,
+        } => stats(containers, stacks, all)?,
         Commands::Update {
             containers,
             stacks,
@@ -385,85 +402,166 @@ fn restart(
 
     Ok(())
 }
+
+#[derive(Debug, Clone)]
+struct ContainerStats {
+    name: String,
+    image: String,
+    status: String,
+    restart_policy: String,
+    cpu_usage: String,
+    memory_usage: String,
+    ip_address: String,
+}
+/// View stats for docker containers
+fn stats(
+    containers: Option<Vec<String>>,
+    stacks: Option<Vec<String>>,
+    all: bool,
+) -> anyhow::Result<()> {
+    let use_color = use_color();
+    let containers = if all {
         let container_ids = list_containers()?;
 
-        for container in &container_ids {
+        if container_ids.is_empty() {
             if use_color {
-                color_println(
-                    Color::Cyan,
-                    &format!("Restarting container: {}", &container),
-                );
+                color_println(Color::Red, "No containers running");
             } else {
-                println!("Restarting container: {}", &container)
+                println!("No containers running");
             }
-
-            Command::new(DOCKER)
-                .args(["restart", container])
-                .status()
-                .context(format!("Failed to restart {}", &container))?;
+            return Ok(());
         }
+
+        container_ids
     } else if let Some(containers) = containers {
-        for container in &containers {
-            if use_color {
-                color_println(
-                    Color::Cyan,
-                    &format!("Restarting container: {}", &container),
-                );
-            } else {
-                println!("Restarting container: {}", &container)
-            }
+        containers
+    } else if let Some(stacks) = stacks {
+        let mut containers = vec![];
 
-            Command::new(DOCKER)
-                .args(["restart", container])
-                .status()
-                .context(format!("Failed to restart {}", &container))?;
+        for stack in &stacks {
+            let container_names = get_containers_from_stack(stack)?;
+            containers.extend(container_names);
         }
+
+        containers
     } else {
-        anyhow::bail!("Must specify containers or use --all (-a)")
+        anyhow::bail!("Must specify containers, use --stacks (-s) or use --all (-a)")
+    };
+
+    let stats_output = Command::new(DOCKER)
+        .args([
+            "stats",
+            "--no-stream",
+            "--format",
+            "table {{.Name}}\t{{.CPUPerc}}\t{{.MemPerc}}",
+        ])
+        .args(&containers)
+        .output()
+        .context("Failed to get stats for containers")?;
+
+    let inspect_output = Command::new(DOCKER)
+        .arg("inspect")
+        .args(&containers)
+        .args(["--format", "{{.Name}},{{.Config.Image}},{{.State.Status}},{{if .HostConfig.RestartPolicy}}{{if .HostConfig.RestartPolicy.Name}}{{.HostConfig.RestartPolicy.Name}}{{else}}no{{end}}{{else}}no{{end}},{{if .NetworkSettings.IPAddress}}{{.NetworkSettings.IPAddress}}{{else}}N/A{{end}}"])
+        .output().context("Failed to inspect containers")?;
+
+    let stats_string = String::from_utf8(stats_output.stdout)?;
+    let inspect_string = String::from_utf8(inspect_output.stdout)?;
+
+    let mut temp_stats_map: std::collections::HashMap<String, StatsData> =
+        std::collections::HashMap::new();
+    let mut temp_inspect_map: std::collections::HashMap<String, InspectData> =
+        std::collections::HashMap::new();
+
+    // skip header line
+    for line in stats_string.lines().skip(1) {
+        let parsed = parse_stats_data(line)?;
+        temp_stats_map.insert(
+            parsed.container_name.clone(),
+            StatsData {
+                container_name: parsed.container_name,
+                cpu: parsed.cpu,
+                memory: parsed.memory,
+            },
+        );
     }
 
-    Ok(())
-}
+    for line in inspect_string.lines() {
+        let parsed = parse_inspect_data(line)?;
+        temp_inspect_map.insert(
+            parsed.container_name.clone(),
+            InspectData {
+                container_name: parsed.container_name,
+                image: parsed.image,
+                status: parsed.status,
+                restart_policy: parsed.restart_policy,
+                ip_address: parsed.ip_address,
+            },
+        );
+    }
 
-/// Updates images of specified docker containers
-fn update(containers: Option<Vec<String>>, all: bool) -> anyhow::Result<()> {
-    let use_color = use_color();
+    assert_eq!(&temp_stats_map.len(), &temp_inspect_map.len());
 
-    if all {
-        let container_ids = list_containers()?;
+    let mut total_stats_map: std::collections::HashMap<String, ContainerStats> =
+        std::collections::HashMap::new();
 
-        for container in &container_ids {
-            update_container_by_name(container)?
-        }
+    for key in temp_stats_map.keys() {
+        let stats = temp_stats_map
+            .get(key)
+            .with_context(|| format!("Failed to get stats for {}", key))?;
+        let inspect = temp_inspect_map
+            .get(key)
+            .with_context(|| format!("Failed to get stats for {}", key))?;
 
-        if use_color {
-            color_println(Color::Green, &format!("Restarting {DSD}"));
+        let container_stats = if use_color {
+            ContainerStats {
+                name: color_println_fmt(Color::Green, &stats.container_name),
+                image: inspect.image.to_string(),
+                status: inspect.status.to_string(),
+                restart_policy: inspect.restart_policy.to_string(),
+                cpu_usage: stats.cpu.to_string(),
+                memory_usage: stats.memory.to_string(),
+                ip_address: inspect.ip_address.to_string(),
+            }
         } else {
-            println!("Restarting {DSD}")
-        }
+            ContainerStats {
+                name: stats.container_name.to_string(),
+                image: inspect.image.to_string(),
+                status: inspect.status.to_string(),
+                restart_policy: inspect.restart_policy.to_string(),
+                cpu_usage: stats.cpu.to_string(),
+                memory_usage: stats.memory.to_string(),
+                ip_address: inspect.ip_address.to_string(),
+            }
+        };
 
-        // containers updated, restart docker-stack-deploy to deploy new image
-        Command::new(DOCKER)
-            .args(["restart", DSD])
-            .status()
-            .context(format!("Failed to restart {DSD}"))?;
-    } else if let Some(containers) = containers {
-        for container in &containers {
-            update_container_by_name(container)?;
-        }
-        if use_color {
-            color_println(Color::Green, &format!("Restarting {DSD}"));
-        } else {
-            println!("Restarting {DSD}");
-        }
+        total_stats_map.insert(key.to_string(), container_stats);
+    }
 
-        // containers updated, restart docker-stack-deploy to deploy new image
-        Command::new(DOCKER)
-            .args(["restart", DSD])
-            .status()
-            .context(format!("Failed to restart {DSD}"))?;
-    } else {
-        anyhow::bail!("Must specify containers or use --all (-a)")
+    println!(
+        "{:<30} {:<50} {:<15} {:<20} {:<10} {:<10} {:<15}",
+        "NAME", "IMAGE", "STATUS", "RESTART", "CPU %", "MEM %", "IP"
+    );
+
+    println!();
+
+    for key in total_stats_map.keys() {
+        let container = total_stats_map.get(key).context("Failed to get item")?;
+
+        println!(
+            "{:<30} {:<50} {:<15} {:<20} {:<10} {:<10} {:<15}",
+            container.name,
+            container
+                .image
+                .split("@")
+                .next()
+                .unwrap_or(&container.image),
+            container.status,
+            container.restart_policy,
+            container.cpu_usage,
+            container.memory_usage,
+            container.ip_address
+        );
     }
 
     Ok(())
