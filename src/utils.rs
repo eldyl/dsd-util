@@ -6,13 +6,14 @@ use std::io::{BufRead, BufReader, IsTerminal};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 
+/// Determine if stdout is going to terminal
 pub fn is_terminal() -> bool {
     std::io::stdout().is_terminal()
 }
 
 /// Gets the current time on the system in readable format
 pub fn get_timestamp() -> String {
-    Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+    Local::now().format("%Y-%m-%dT%H:%M:%S").to_string()
 }
 
 /// Lists currently running docker containers
@@ -146,6 +147,7 @@ pub fn update_container_by_name(container_name: &str) -> anyhow::Result<u8> {
     Ok(is_updated)
 }
 
+/// Spawns threads to handle container logs
 pub fn spawn_container_logger(
     container: &str,
     is_container_id: bool,
