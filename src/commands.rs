@@ -1,10 +1,11 @@
 use crate::printer::{color_println, color_println_fmt, Color};
 use crate::utils::{
-    get_containers_from_stack, get_timestamp, kill_containers, list_containers, parse_inspect_data,
-    parse_stats_data, spawn_container_logger, update_container_by_name, use_color, InspectData,
-    StatsData,
+    get_containers_from_stack, get_timestamp, is_terminal, kill_containers, list_containers,
+    parse_inspect_data, parse_stats_data, spawn_container_logger, update_container_by_name,
+    InspectData, StatsData,
 };
 use anyhow::Context;
+use std::collections::hash_map::HashMap;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 
@@ -27,7 +28,7 @@ pub fn init(project_dir: String, git_url: String) -> anyhow::Result<()> {
 
     println!();
 
-    let use_color = use_color();
+    let use_color = is_terminal();
 
     if use_color {
         color_println(
@@ -94,7 +95,7 @@ pub fn logs(
     tail: u32,
     all: bool,
 ) -> anyhow::Result<()> {
-    let use_color = use_color();
+    let use_color = is_terminal();
 
     let containers = if all {
         let container_ids = list_containers()?;
@@ -139,7 +140,7 @@ pub fn logs(
         let tx = tx.clone();
         let is_container_id = all;
         let handle = spawn_container_logger(&container, is_container_id, use_color, tail, tx)
-            .with_context(|| format!("Failed to spawn container logger for {}", container))?;
+            .with_context(|| format!("Failed to spawn container logger for {container}"))?;
         handles.push(handle);
     }
 
@@ -166,7 +167,7 @@ pub fn nuke() -> anyhow::Result<()> {
         kill_containers(container_ids)?
     }
 
-    let use_color = use_color();
+    let use_color = is_terminal();
 
     if use_color {
         color_println(Color::Green, "Running docker-stack-deploy...");
@@ -259,7 +260,7 @@ pub fn restart(
         anyhow::bail!("Must specify containers or use --all (-a)")
     };
 
-    let use_color = use_color();
+    let use_color = is_terminal();
 
     for container in &containers {
         if use_color {
@@ -280,23 +281,26 @@ pub fn restart(
     Ok(())
 }
 
+/// Container stats to be gathered
 #[derive(Debug, Clone)]
 struct ContainerStats {
     name: String,
-    image: String,
     status: String,
+    health: String,
     restart_policy: String,
+    uptime: String,
     cpu_usage: String,
     memory_usage: String,
-    ip_address: String,
+    ports: String,
 }
+
 /// View stats for docker containers
 pub fn stats(
     containers: Option<Vec<String>>,
     stacks: Option<Vec<String>>,
     all: bool,
 ) -> anyhow::Result<()> {
-    let use_color = use_color();
+    let use_color = is_terminal();
     let containers = if all {
         let container_ids = list_containers()?;
 
@@ -336,19 +340,27 @@ pub fn stats(
         .output()
         .context("Failed to get stats for containers")?;
 
+    let inspect_format = concat!(
+        "{{.Name}},",
+        "{{.State.Status}},",
+        "{{if .HostConfig.RestartPolicy}}{{if .HostConfig.RestartPolicy.Name}}{{.HostConfig.RestartPolicy.Name}}{{else}}no{{end}}{{else}}no{{end}},",
+        "{{if index .State \"Health\"}}{{.State.Health.Status}}{{else}}N/A{{end}},",
+        "{{.State.StartedAt}},",
+        "{{if .NetworkSettings.Ports}}{{range $key, $value := .NetworkSettings.Ports}}{{$key}}{{if $value}}:{{(index $value 0).HostPort}}{{end}} {{end}}{{else}}N/A{{end}}"
+        );
+
     let inspect_output = Command::new(DOCKER)
         .arg("inspect")
         .args(&containers)
-        .args(["--format", "{{.Name}},{{.Config.Image}},{{.State.Status}},{{if .HostConfig.RestartPolicy}}{{if .HostConfig.RestartPolicy.Name}}{{.HostConfig.RestartPolicy.Name}}{{else}}no{{end}}{{else}}no{{end}},{{if .NetworkSettings.IPAddress}}{{.NetworkSettings.IPAddress}}{{else}}N/A{{end}}"])
-        .output().context("Failed to inspect containers")?;
+        .args(["--format", inspect_format])
+        .output()
+        .context("Failed to inspect containers")?;
 
     let stats_string = String::from_utf8(stats_output.stdout)?;
     let inspect_string = String::from_utf8(inspect_output.stdout)?;
 
-    let mut temp_stats_map: std::collections::HashMap<String, StatsData> =
-        std::collections::HashMap::new();
-    let mut temp_inspect_map: std::collections::HashMap<String, InspectData> =
-        std::collections::HashMap::new();
+    let mut temp_stats_map: HashMap<String, StatsData> = HashMap::new();
+    let mut temp_inspect_map: HashMap<String, InspectData> = HashMap::new();
 
     // skip header line
     for line in stats_string.lines().skip(1) {
@@ -369,56 +381,91 @@ pub fn stats(
             parsed.container_name.clone(),
             InspectData {
                 container_name: parsed.container_name,
-                image: parsed.image,
                 status: parsed.status,
                 restart_policy: parsed.restart_policy,
-                ip_address: parsed.ip_address,
+                health: parsed.health,
+                uptime: parsed.uptime,
+                ports: parsed.ports,
             },
         );
     }
 
     assert_eq!(&temp_stats_map.len(), &temp_inspect_map.len());
 
-    let mut total_stats_map: std::collections::HashMap<String, ContainerStats> =
-        std::collections::HashMap::new();
+    let mut total_stats_map: HashMap<String, ContainerStats> = HashMap::new();
 
     for key in temp_stats_map.keys() {
         let stats = temp_stats_map
             .get(key)
-            .with_context(|| format!("Failed to get stats for {}", key))?;
+            .with_context(|| format!("Failed to get stats for {key}"))?;
         let inspect = temp_inspect_map
             .get(key)
-            .with_context(|| format!("Failed to get stats for {}", key))?;
+            .with_context(|| format!("Failed to get stats for {key}"))?;
 
         let container_stats = if use_color {
             ContainerStats {
-                name: color_println_fmt(Color::Green, &stats.container_name),
-                image: inspect.image.to_string(),
-                status: inspect.status.to_string(),
+                name: color_println_fmt(Color::Cyan, &stats.container_name),
+                status: {
+                    if &inspect.status.to_lowercase() == "running" {
+                        color_println_fmt(Color::Green, &inspect.status)
+                    } else if &inspect.status.to_lowercase() == "created" {
+                        color_println_fmt(Color::Cyan, &inspect.status)
+                    } else if &inspect.status.to_lowercase() == "paused"
+                        || &inspect.status.to_lowercase() == "restarting"
+                    {
+                        color_println_fmt(Color::Yellow, &inspect.status)
+                    } else {
+                        color_println_fmt(Color::Red, &inspect.status)
+                    }
+                },
                 restart_policy: inspect.restart_policy.to_string(),
+                health: {
+                    if &inspect.health.to_lowercase() == "healthy" {
+                        color_println_fmt(Color::Green, &inspect.health)
+                    } else if &inspect.health.to_lowercase() == "unhealthy" {
+                        color_println_fmt(Color::Red, &inspect.health)
+                    } else {
+                        color_println_fmt(Color::White, &inspect.health)
+                    }
+                },
+                uptime: inspect.uptime.to_string(),
                 cpu_usage: stats.cpu.to_string(),
                 memory_usage: stats.memory.to_string(),
-                ip_address: inspect.ip_address.to_string(),
+                ports: inspect.ports.to_string(),
             }
         } else {
             ContainerStats {
                 name: stats.container_name.to_string(),
-                image: inspect.image.to_string(),
                 status: inspect.status.to_string(),
                 restart_policy: inspect.restart_policy.to_string(),
+                health: inspect.health.to_string(),
+                uptime: inspect.uptime.to_string(),
                 cpu_usage: stats.cpu.to_string(),
                 memory_usage: stats.memory.to_string(),
-                ip_address: inspect.ip_address.to_string(),
+                ports: inspect.ports.to_string(),
             }
         };
 
         total_stats_map.insert(key.to_string(), container_stats);
     }
-
-    println!(
-        "{:<30} {:<50} {:<15} {:<20} {:<10} {:<10} {:<15}",
-        "NAME", "IMAGE", "STATUS", "RESTART", "CPU %", "MEM %", "IP"
-    );
+    if use_color {
+        println!(
+            "{:<35} {:<20} {:<16} {:<20} {:<18} {:<8} {:<8} {:<20}",
+            &color_println_fmt(Color::White, "NAME"),
+            &color_println_fmt(Color::White, "STATUS"),
+            "RESTART",
+            &color_println_fmt(Color::White, "HEALTH"),
+            "UPTIME",
+            "CPU %",
+            "MEM %",
+            "PORTS"
+        );
+    } else {
+        println!(
+            "{:<35} {:<20} {:<16} {:<20} {:<18} {:<8} {:<8} {:<20}",
+            "NAME", "STATUS", "RESTART", "HEALTH", "UPTIME", "CPU %", "MEM %", "PORTS"
+        );
+    }
 
     println!();
 
@@ -426,18 +473,15 @@ pub fn stats(
         let container = total_stats_map.get(key).context("Failed to get item")?;
 
         println!(
-            "{:<30} {:<50} {:<15} {:<20} {:<10} {:<10} {:<15}",
+            "{:<35} {:<20} {:<16} {:<20} {:<18} {:<8} {:<8} {:<20}",
             container.name,
-            container
-                .image
-                .split("@")
-                .next()
-                .unwrap_or(&container.image),
             container.status,
             container.restart_policy,
+            container.health,
+            container.uptime,
             container.cpu_usage,
             container.memory_usage,
-            container.ip_address
+            container.ports
         );
     }
 
@@ -467,7 +511,7 @@ pub fn update(
         anyhow::bail!("Must specify containers or use --all (-a)")
     };
 
-    let use_color = use_color();
+    let use_color = is_terminal();
 
     let mut num_containers_updated = 0;
 
@@ -494,7 +538,7 @@ pub fn update(
         println!();
         color_println(Color::Green, &format!("Restarting {DSD}"));
     } else {
-        println!("New images pulled: {}", num_containers_updated);
+        println!("New images pulled: {num_containers_updated}");
         println!();
         println!("Restarting {DSD}");
     }
