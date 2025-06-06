@@ -75,7 +75,7 @@ enum Commands {
         #[arg(long)]
         stacks: Option<Vec<String>>,
     Update {
-        /// Update specified container
+        /// Update specified containers
         containers: Option<Vec<String>>,
 
         /// Update specified stacks
