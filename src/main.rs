@@ -1,14 +1,19 @@
 use anyhow::Context;
-use chrono::Local;
 use clap::{Parser, Subcommand};
-use dsd_util::{color_println, color_println_fmt, Color};
-use std::io::{BufRead, BufReader, IsTerminal};
+use dsd_util::printer::{color_println, color_println_fmt, Color};
+use dsd_util::utils::{
+    get_containers_from_stack, get_timestamp, kill_containers, list_containers,
+    spawn_container_logger, update_container_by_name, use_color,
+};
+use dsd_util::DOCKER;
+use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
-use std::sync::Arc;
 
-const DOCKER: &str = "docker";
-const DSD: &str = "docker-stack-deploy";
-const PATH_DSD_COMPOSE: &str = "/var/lib/docker-stack-deploy/compose.yml";
+pub const COMPOSE: &str = "compose";
+pub const DSD: &str = "docker-stack-deploy";
+pub const PATH_DSD_COMPOSE: &str = "/var/lib/docker-stack-deploy/compose.yml";
+pub const DEFAULT_ARG_PROJECT_DIR: &str = "/var/lib/docker-stack-deploy";
+pub const DEFAULT_ARG_TAIL: &str = "100";
 
 #[derive(Debug, Parser)]
 #[command(version, about = "A simple helper for managing your docker-stack-deploy containers.", long_about = None)]
@@ -35,6 +40,10 @@ enum Commands {
         /// View logs for specified container
         containers: Option<Vec<String>>,
 
+        /// View logs for specified stacks
+        #[arg(long)]
+        stacks: Option<Vec<String>>,
+
         /// Set the number of lines to show from end of logs
         #[arg(long, default_value = "100")]
         tail: u32,
@@ -52,6 +61,10 @@ enum Commands {
         /// Restart specified container
         containers: Option<Vec<String>>,
 
+        /// Restart specified stacks
+        #[arg(long)]
+        stacks: Option<Vec<String>>,
+
         /// Restart all containers
         #[arg(long)]
         all: bool,
@@ -59,9 +72,15 @@ enum Commands {
 
     // OPTIMIZE: Don't restart docker-stack-deploy if no containers were updated
     /// Update containers
+        #[arg(long)]
+        stacks: Option<Vec<String>>,
     Update {
         /// Update specified container
         containers: Option<Vec<String>>,
+
+        /// Update specified stacks
+        #[arg(long)]
+        stacks: Option<Vec<String>>,
 
         /// Update all containers
         #[arg(long)]
@@ -79,12 +98,21 @@ fn main() -> anyhow::Result<()> {
         } => init(project_dir, git_url)?,
         Commands::Logs {
             containers,
+            stacks,
             tail,
             all,
-        } => logs(containers, tail, all)?,
+        } => logs(containers, stacks, tail, all)?,
         Commands::Nuke => nuke()?,
-        Commands::Restart { containers, all } => restart(containers, all)?,
-        Commands::Update { containers, all } => update(containers, all)?,
+        Commands::Restart {
+            containers,
+            stacks,
+            all,
+        } => restart(containers, stacks, all)?,
+        Commands::Update {
+            containers,
+            stacks,
+            all,
+        } => update(containers, stacks, all)?,
     }
 
     Ok(())
@@ -209,7 +237,12 @@ fn kill_containers(container_ids: Vec<String>) -> anyhow::Result<()> {
 }
 
 /// Shows logs for specified containers
-fn logs(containers: Option<Vec<String>>, tail: u32, all: bool) -> anyhow::Result<()> {
+fn logs(
+    containers: Option<Vec<String>>,
+    stacks: Option<Vec<String>>,
+    tail: u32,
+    all: bool,
+) -> anyhow::Result<()> {
     let use_color = use_color();
 
     let containers = if all {
@@ -226,6 +259,15 @@ fn logs(containers: Option<Vec<String>>, tail: u32, all: bool) -> anyhow::Result
 
         container_ids
     } else if let Some(containers) = containers {
+        containers
+    } else if let Some(stacks) = stacks {
+        let mut containers = vec![];
+
+        for stack in &stacks {
+            let container_names = get_containers_from_stack(stack)?;
+            containers.extend(container_names);
+        }
+
         containers
     } else {
         anyhow::bail!("Must specify containers or use --all (-a)")
@@ -468,7 +510,28 @@ fn nuke() -> anyhow::Result<()> {
 }
 
 /// Restarts specified docker containers
-fn restart(containers: Option<Vec<String>>, all: bool) -> anyhow::Result<()> {
+fn restart(
+    containers: Option<Vec<String>>,
+    stacks: Option<Vec<String>>,
+    all: bool,
+) -> anyhow::Result<()> {
+    let containers = if all {
+        list_containers()?
+    } else if let Some(containers) = containers {
+        containers
+    } else if let Some(stacks) = stacks {
+        let mut containers = vec![];
+
+        for stack in &stacks {
+            let container_names = get_containers_from_stack(stack)?;
+            containers.extend(container_names);
+        }
+
+        containers
+    } else {
+        anyhow::bail!("Must specify containers or use --all (-a)")
+    };
+
     let use_color = use_color();
 
     if all {
@@ -579,17 +642,28 @@ fn get_container_name(container_id: &str) -> anyhow::Result<String> {
         .trim()
         .trim_start_matches('/') // Docker names start with '/'
         .to_string();
+/// Updates images of specified docker containers
+fn update(
+    containers: Option<Vec<String>>,
+    stacks: Option<Vec<String>>,
+    all: bool,
+) -> anyhow::Result<()> {
+    let containers = if all {
+        list_containers()?
+    } else if let Some(containers) = containers {
+        containers
+    } else if let Some(stacks) = stacks {
+        let mut containers = vec![];
 
-    Ok(name)
-}
+        for stack in &stacks {
+            let container_names = get_containers_from_stack(stack)?;
+            containers.extend(container_names);
+        }
 
-/// Updates a container by the container_name provided as argument
-fn update_container_by_name(container_name: &str) -> anyhow::Result<()> {
-    // get container image string by referenciing the container_name
-    let image_output = Command::new(DOCKER)
-        .args(["inspect", "--format", "{{.Config.Image}}", container_name])
-        .output()
-        .context("Failed to inspect container")?;
+        containers
+    } else {
+        anyhow::bail!("Must specify containers or use --all (-a)")
+    };
 
     // parse output into clean String
     let image_name = String::from_utf8(image_output.stdout)
