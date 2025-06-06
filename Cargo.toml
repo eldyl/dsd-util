@@ -1,8 +1,18 @@
 [package]
 name = "dsd-util"
 version = "0.1.0"
-authors = ["Dylan Ullrich <dylan@eldyl.org>"]
 edition = "2024"
+authors = ["Dylan Ullrich <dylan@eldyl.org>"]
+description = "A simple helper for managing your docker-stack-deploy containers."
+license = "GPL-3.0"
+repository = "https://github.com/eldyl/dsd-util"
+homepage = "https://github.com/eldyl/dsd-util"
+readme = "README.md"
+categories = ["command-line-utilities"]
+keywords = ["cli", "docker", "docker-stack-deploy"]
+
+[profile.release]
+strip = true
 
 [dependencies]
 anyhow = "1.0.98"
