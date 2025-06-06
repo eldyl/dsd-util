@@ -16,7 +16,7 @@ enum Commands {
     /// Initialize and bootstrap a new instance of docker-stack-deploy
     Init {
         /// Path where docker-stack-deploy compose file will be located
-        #[arg(long, default_value = DEFAULT_ARG_PROJECT_DIR)]
+        #[arg(short, long, default_value = DEFAULT_ARG_PROJECT_DIR)]
         project_dir: String,
 
         /// The git remote you want to utilize for docker-stack-deploy. Example: https://github.com/YOURNAME/REPO.git
@@ -30,15 +30,15 @@ enum Commands {
         containers: Option<Vec<String>>,
 
         /// View logs for specified stacks
-        #[arg(long)]
+        #[arg(short, long)]
         stacks: Option<Vec<String>>,
 
         /// Set the number of lines to show from end of logs
-        #[arg(long, default_value = DEFAULT_ARG_TAIL)]
+        #[arg(short, long, default_value = DEFAULT_ARG_TAIL)]
         tail: u32,
 
         /// View logs for all containers
-        #[arg(long)]
+        #[arg(short, long)]
         all: bool,
     },
 
@@ -52,11 +52,11 @@ enum Commands {
         containers: Option<Vec<String>>,
 
         /// Restart specified stacks
-        #[arg(long)]
+        #[arg(short, long)]
         stacks: Option<Vec<String>>,
 
         /// Restart all containers
-        #[arg(long)]
+        #[arg(short, long)]
         all: bool,
     },
 
@@ -66,11 +66,11 @@ enum Commands {
         containers: Option<Vec<String>>,
 
         /// View stats for specified stacks
-        #[arg(long)]
+        #[arg(short, long)]
         stacks: Option<Vec<String>>,
 
         /// View stats for all containers
-        #[arg(long)]
+        #[arg(short, long)]
         all: bool,
     },
 
@@ -80,11 +80,11 @@ enum Commands {
         containers: Option<Vec<String>>,
 
         /// Update specified stacks
-        #[arg(long)]
+        #[arg(short, long)]
         stacks: Option<Vec<String>>,
 
         /// Update all containers
-        #[arg(long)]
+        #[arg(short, long)]
         all: bool,
     },
 }
