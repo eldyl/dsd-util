@@ -6,7 +6,7 @@ use crate::utils::{
 };
 use anyhow::Context;
 use std::collections::hash_map::HashMap;
-use std::io::{BufRead, BufReader};
+use std::io::{self, BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
 pub const DOCKER: &str = "docker";
@@ -159,21 +159,46 @@ pub fn logs(
 
 /// Kills all running containers, and then redeploys docker-stack-deploy
 pub fn nuke() -> anyhow::Result<()> {
+    // ask user to confirm action
+    color_println(
+        Color::Yellow,
+        "WARNING: All of your containers will be forcefully removed!",
+    );
+    println!(
+        "After removal, {} will be restarted to redeploy all associated containers.\n",
+        color_println_fmt(Color::Magenta, DSD)
+    );
+    print!("Are you sure you want to nuke your docker stacks? [y/N]: ");
+    let _ = io::stdout().flush();
+
+    // capture user input
+    let mut input = String::new();
+    let _ = io::stdin().read_line(&mut input);
+    let response = input.trim().to_lowercase();
+
+    // evaluate response
+    match response.as_str() {
+        "yes" | "y" => {
+            color_println(Color::Yellow, "Nuking docker containers");
+        }
+        _ => {
+            color_println(Color::Green, "Nuke aborted!");
+            return Ok(());
+        }
+    };
+
     // get list of currently running docker containers by id
     let container_ids = list_containers()?;
 
     // if docker containers are running, kill them
-    if !container_ids.is_empty() {
+    if container_ids.is_empty() {
+        color_println(Color::Red, "No containers running");
+        return Ok(());
+    } else {
         kill_containers(container_ids)?
     }
 
-    let use_color = is_terminal();
-
-    if use_color {
-        color_println(Color::Green, "Running docker-stack-deploy...");
-    } else {
-        println!("Running docker-stack-deploy...")
-    }
+    color_println(Color::Green, "Running docker-stack-deploy...");
 
     // run docker-stack-deploy
     Command::new(DOCKER)
@@ -181,14 +206,10 @@ pub fn nuke() -> anyhow::Result<()> {
         .status()
         .context("Failed to start docker-stack-deploy")?;
 
-    if use_color {
-        color_println(
-            Color::Green,
-            "Following logs until all containers deployed...",
-        );
-    } else {
-        println!("Following logs until all containers deployed...")
-    }
+    color_println(
+        Color::Green,
+        "Following logs until all containers deployed...",
+    );
 
     let start_time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -214,16 +235,12 @@ pub fn nuke() -> anyhow::Result<()> {
     if let Some(stdout) = logs_process.stdout.take() {
         let reader = BufReader::new(stdout);
         for (i, line) in reader.lines().map_while(Result::ok).enumerate() {
-            if use_color {
-                println!(
-                    "[{} | {}] {}",
-                    color_println_fmt(Color::Cyan, &get_timestamp()),
-                    color_println_fmt(Color::Magenta, DSD),
-                    line
-                );
-            } else {
-                println!("[{} | {}] {}", &get_timestamp(), DSD, line);
-            }
+            println!(
+                "[{} | {}] {}",
+                color_println_fmt(Color::Cyan, &get_timestamp()),
+                color_println_fmt(Color::Magenta, DSD),
+                line
+            );
             if line.contains("Already up to date") && i > 0 {
                 // first update check has happened after deployment
                 break;

@@ -42,7 +42,6 @@ enum Commands {
         all: bool,
     },
 
-    // TODO: confirm nuke
     /// Kill all docker containers and redeploy docker-stack-deploy
     Nuke,
 
