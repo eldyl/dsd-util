@@ -567,12 +567,15 @@ fn stats(
     Ok(())
 }
 
+/// Shape of stats data
 #[derive(Debug, Clone)]
 struct StatsData {
     container_name: String,
     cpu: String,
     memory: String,
 }
+
+/// Parse stats data
 fn parse_stats_data(stats: &str) -> anyhow::Result<StatsData> {
     let parsed = stats
         .trim_start_matches("/")
@@ -586,6 +589,7 @@ fn parse_stats_data(stats: &str) -> anyhow::Result<StatsData> {
     })
 }
 
+/// Shape of inspected data
 #[derive(Debug, Clone)]
 struct InspectData {
     container_name: String,
@@ -594,6 +598,8 @@ struct InspectData {
     restart_policy: String,
     ip_address: String,
 }
+
+/// Parses inspected data
 fn parse_inspect_data(stats: &str) -> anyhow::Result<InspectData> {
     let parsed = stats
         .trim_start_matches("/")
