@@ -452,13 +452,46 @@ fn update(containers: Option<Vec<String>>, all: bool) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn use_color() -> bool {
-    std::io::stdout().is_terminal()
+#[derive(Debug, Clone)]
+struct StatsData {
+    container_name: String,
+    cpu: String,
+    memory: String,
+}
+fn parse_stats_data(stats: &str) -> anyhow::Result<StatsData> {
+    let parsed = stats
+        .trim_start_matches("/")
+        .split_whitespace()
+        .collect::<Vec<&str>>();
+
+    Ok(StatsData {
+        container_name: parsed[0].to_string(),
+        cpu: parsed[1].to_string(),
+        memory: parsed[2].to_string(),
+    })
 }
 
-/// Gets the current time on the system in readable format
-fn get_timestamp() -> String {
-    Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
+#[derive(Debug, Clone)]
+struct InspectData {
+    container_name: String,
+    image: String,
+    status: String,
+    restart_policy: String,
+    ip_address: String,
+}
+fn parse_inspect_data(stats: &str) -> anyhow::Result<InspectData> {
+    let parsed = stats
+        .trim_start_matches("/")
+        .split(",")
+        .collect::<Vec<&str>>();
+
+    Ok(InspectData {
+        container_name: parsed[0].to_string(),
+        image: parsed[1].to_string(),
+        status: parsed[2].to_string(),
+        restart_policy: parsed[3].to_string(),
+        ip_address: parsed[4].to_string(),
+    })
 }
 
 /// Updates images of specified docker containers
