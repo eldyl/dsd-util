@@ -1,5 +1,5 @@
+use crate::commands::DOCKER;
 use crate::printer::{color_println, color_println_fmt, Color};
-use crate::DOCKER;
 use anyhow::Context;
 use chrono::Local;
 use std::io::{BufRead, BufReader, IsTerminal};
