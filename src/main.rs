@@ -367,7 +367,24 @@ fn restart(
 
     let use_color = use_color();
 
-    if all {
+    for container in &containers {
+        if use_color {
+            color_println(
+                Color::Cyan,
+                &format!("Restarting container: {}", &container),
+            );
+        } else {
+            println!("Restarting container: {}", &container)
+        }
+
+        Command::new(DOCKER)
+            .args(["restart", container])
+            .status()
+            .context(format!("Failed to restart {}", &container))?;
+    }
+
+    Ok(())
+}
         let container_ids = list_containers()?;
 
         for container in &container_ids {
