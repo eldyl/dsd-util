@@ -1,12 +1,12 @@
 use crate::commands::DOCKER;
 use crate::printer::{color_println, color_println_fmt, Color};
 use anyhow::Context;
-use chrono::Local;
+use chrono::{DateTime, Local, Utc};
 use std::io::{BufRead, BufReader, IsTerminal};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 
-pub fn use_color() -> bool {
+pub fn is_terminal() -> bool {
     std::io::stdout().is_terminal()
 }
 
@@ -17,10 +17,8 @@ pub fn get_timestamp() -> String {
 
 /// Lists currently running docker containers
 pub fn list_containers() -> anyhow::Result<Vec<String>> {
-    if use_color() {
-        color_println(Color::Green, "Listing docker containers...");
-    } else {
-        println!("Listing docker containers...")
+    if is_terminal() {
+        color_println(Color::Magenta, "Listing docker containers...");
     }
 
     // Use docker to list container_ids
@@ -44,7 +42,7 @@ pub fn list_containers() -> anyhow::Result<Vec<String>> {
 
 /// Force removes all docker containers provided in argument
 pub fn kill_containers(container_ids: Vec<String>) -> anyhow::Result<()> {
-    if use_color() {
+    if is_terminal() {
         color_println(Color::Yellow, "Killing docker containers...");
     } else {
         println!("Killing docker containers...")
@@ -116,7 +114,7 @@ pub fn update_container_by_name(container_name: &str) -> anyhow::Result<u8> {
         .trim()
         .to_string();
 
-    if use_color() {
+    if is_terminal() {
         color_println(
             Color::Cyan,
             &format!("Pulling image for {}: {}", &container_name, &image_name),
@@ -298,10 +296,11 @@ pub fn parse_stats_data(stats: &str) -> anyhow::Result<StatsData> {
 #[derive(Debug, Clone)]
 pub struct InspectData {
     pub container_name: String,
-    pub image: String,
     pub status: String,
     pub restart_policy: String,
-    pub ip_address: String,
+    pub health: String,
+    pub uptime: String,
+    pub ports: String,
 }
 
 /// Parses inspected data
@@ -313,9 +312,32 @@ pub fn parse_inspect_data(stats: &str) -> anyhow::Result<InspectData> {
 
     Ok(InspectData {
         container_name: parsed[0].to_string(),
-        image: parsed[1].to_string(),
-        status: parsed[2].to_string(),
-        restart_policy: parsed[3].to_string(),
-        ip_address: parsed[4].to_string(),
+        status: parsed[1].to_string(),
+        restart_policy: parsed[2].to_string(),
+        health: parsed[3].to_string(),
+        uptime: calc_uptime(parsed[4])?,
+        ports: parsed[5].to_string(),
     })
+}
+
+/// Calculate uptime for a container
+fn calc_uptime(start_time: &str) -> anyhow::Result<String> {
+    let start_time =
+        DateTime::parse_from_rfc3339(start_time).context("Failed to parse start_time")?;
+    let now = Utc::now();
+    let duration = now.signed_duration_since(start_time.with_timezone(&Utc));
+
+    let days = duration.num_days();
+    let hours = duration.num_hours() % 24;
+    let minutes = duration.num_minutes() % 60;
+
+    let uptime = if days > 0 {
+        format!("{days}D {hours}H {minutes}m")
+    } else if hours > 0 {
+        format!("{hours}H {minutes}m")
+    } else {
+        format!("{minutes}m")
+    };
+
+    Ok(uptime)
 }
