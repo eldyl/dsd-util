@@ -1,6 +1,6 @@
 [package]
 name = "dsd-util"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 authors = ["Dylan Ullrich <dylan@eldyl.org>"]
 description = "A simple helper for managing your docker-stack-deploy containers."
