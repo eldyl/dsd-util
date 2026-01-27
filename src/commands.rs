@@ -128,10 +128,10 @@ pub fn logs(
     if use_color {
         color_println(
             Color::Cyan,
-            &format!("Following logs for container: {}", &containers.len()),
+            &format!("Following logs for {} container(s)", &containers.len()),
         );
     } else {
-        println!("Following logs for container: {}", &containers.len());
+        println!("Following logs for {} container(s)", &containers.len());
     }
     let (tx, rx) = std::sync::mpsc::channel::<String>();
     let mut handles: Vec<std::thread::JoinHandle<()>> = vec![];
