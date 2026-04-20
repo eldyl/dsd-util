@@ -15,9 +15,19 @@ const PATH_DSD_COMPOSE: &str = "/var/lib/docker-stack-deploy/compose.yml";
 
 /// Initializes a new instance of docker-stack-deploy using bootstrap script
 pub fn init(project_dir: String, git_url: String) -> anyhow::Result<()> {
+    let host_sock = match std::env::var("DOCKER_HOST") {
+        Ok(s) => {
+            let Some(path) = s.strip_prefix("unix://") else {
+                anyhow::bail!("dsd-util init only supports unix:// DOCKER_HOST. Got: {s}");
+            };
+            path.to_string()
+        }
+        Err(_) => "/var/run/docker.sock".to_string(),
+    };
+
     Command::new(DOCKER)
         .args(["run", "--rm", "-it"])
-        .args(["-v", "/var/run/docker.sock:/var/run/docker.sock"])
+        .args(["-v", &format!("{host_sock}:/var/run/docker.sock")])
         .args(["-v", &format!("{project_dir}:{project_dir}")])
         .args(["ghcr.io/wez/docker-stack-deploy"])
         .args([DSD, "bootstrap"])
