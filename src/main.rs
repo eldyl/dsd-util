@@ -1,7 +1,6 @@
 use clap::{Parser, Subcommand};
 use dsd_util::commands::{init, logs, nuke, restart, stats, update};
 
-const DEFAULT_ARG_PROJECT_DIR: &str = "/var/lib/docker-stack-deploy";
 const DEFAULT_ARG_TAIL: &str = "100";
 
 #[derive(Debug, Parser)]
@@ -16,8 +15,9 @@ enum Commands {
     /// Initialize and bootstrap a new instance of docker-stack-deploy
     Init {
         /// Path where docker-stack-deploy compose file will be located
-        #[arg(short, long, default_value = DEFAULT_ARG_PROJECT_DIR)]
-        project_dir: String,
+        /// defaults to an XDG user path on rootless docker, /var/lib/docker-stack-deploy otherwise
+        #[arg(short, long)]
+        project_dir: Option<String>,
 
         /// The git remote you want to utilize for docker-stack-deploy. Example: https://github.com/YOURNAME/REPO.git
         git_url: String,
@@ -43,7 +43,12 @@ enum Commands {
     },
 
     /// Kill all docker containers and redeploy docker-stack-deploy
-    Nuke,
+    Nuke {
+        /// Path where docker-stack-deploy compose file is located
+        /// defaults to an XDG user path on rootless docker, /var/lib/docker-stack-deploy otherwise
+        #[arg(short, long)]
+        project_dir: Option<String>,
+    },
 
     /// Restart containers
     Restart {
@@ -102,7 +107,7 @@ fn main() -> anyhow::Result<()> {
             tail,
             all,
         } => logs(containers, stacks, tail, all)?,
-        Commands::Nuke => nuke()?,
+        Commands::Nuke { project_dir } => nuke(project_dir)?,
         Commands::Restart {
             containers,
             stacks,

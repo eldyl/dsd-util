@@ -1,40 +1,27 @@
+use crate::deployer;
 use crate::printer::{color_println, color_println_fmt, Color};
 use crate::utils::{
-    get_containers_from_stack, get_timestamp, is_terminal, kill_containers, list_containers,
-    parse_inspect_data, parse_stats_data, spawn_container_logger, update_container_by_name,
-    InspectData, StatsData,
+    get_containers_from_stack, is_terminal, kill_containers, list_containers, parse_inspect_data,
+    parse_stats_data, spawn_container_logger, update_container_by_name, InspectData, StatsData,
 };
 use anyhow::Context;
 use std::collections::hash_map::HashMap;
-use std::io::{self, BufRead, BufReader, Write};
-use std::process::{Command, Stdio};
+use std::fs;
+use std::io::{self, Write};
+use std::process::Command;
 
 pub const DOCKER: &str = "docker";
 const DSD: &str = "docker-stack-deploy";
-const PATH_DSD_COMPOSE: &str = "/var/lib/docker-stack-deploy/compose.yml";
 
-/// Initializes a new instance of docker-stack-deploy using bootstrap script
-pub fn init(project_dir: String, git_url: String) -> anyhow::Result<()> {
-    let host_sock = match std::env::var("DOCKER_HOST") {
-        Ok(s) => {
-            let Some(path) = s.strip_prefix("unix://") else {
-                anyhow::bail!("dsd-util init only supports unix:// DOCKER_HOST. Got: {s}");
-            };
-            path.to_string()
-        }
-        Err(_) => "/var/run/docker.sock".to_string(),
-    };
+/// Initializes a new instance of docker-stack-deploy
+pub fn init(project_dir: Option<String>, git_url: String) -> anyhow::Result<()> {
+    let project_dir = project_dir.unwrap_or_else(deployer::default_project_dir);
+    let host_sock = deployer::resolve_host_sock()?;
 
-    Command::new(DOCKER)
-        .args(["run", "--rm", "-it"])
-        .args(["-v", &format!("{host_sock}:/var/run/docker.sock")])
-        .args(["-v", &format!("{project_dir}:{project_dir}")])
-        .args(["ghcr.io/wez/docker-stack-deploy"])
-        .args([DSD, "bootstrap"])
-        .args(["--project-dir", &project_dir])
-        .args(["--git-url", &git_url])
-        .status()
-        .context("Failed to bootstrap docker-stack-deploy")?;
+    fs::create_dir_all(&project_dir).context(format!("Failed to create {}", &project_dir))?;
+    deployer::ensure_env_file(&project_dir, &git_url)?;
+    deployer::write_compose_yaml(&project_dir, &host_sock)?;
+    deployer::bring_up(&project_dir)?;
 
     println!();
 
@@ -51,49 +38,7 @@ pub fn init(project_dir: String, git_url: String) -> anyhow::Result<()> {
 
     println!();
 
-    let start_time = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .context("Failed to get current time")?
-        .as_secs();
-
-    // follow docker-stack-deploy logs until first update check has happened
-    let mut logs_process = Command::new(DOCKER)
-        .args([
-            "compose",
-            "-f",
-            PATH_DSD_COMPOSE,
-            "logs",
-            "--follow",
-            "--no-log-prefix",
-            "--since",
-            &start_time.to_string(),
-        ])
-        .stdout(Stdio::piped())
-        .spawn()
-        .context("Failed to start following logs")?;
-
-    if let Some(stdout) = logs_process.stdout.take() {
-        let reader = BufReader::new(stdout);
-        for (i, line) in reader.lines().map_while(Result::ok).enumerate() {
-            if use_color {
-                println!(
-                    "[{} | {}] {}",
-                    color_println_fmt(Color::Cyan, &get_timestamp()),
-                    color_println_fmt(Color::Magenta, DSD),
-                    line
-                );
-            } else {
-                println!("[{} | {}] {}", &get_timestamp(), DSD, line);
-            }
-            if line.contains("Already up to date") && i > 0 {
-                // first update check has happened after deployment
-                break;
-            }
-        }
-    }
-
-    let _ = logs_process.kill();
-    let _ = logs_process.wait();
+    deployer::follow_deploy_logs(&project_dir, use_color)?;
 
     Ok(())
 }
@@ -168,7 +113,9 @@ pub fn logs(
 }
 
 /// Kills all running containers, and then redeploys docker-stack-deploy
-pub fn nuke() -> anyhow::Result<()> {
+pub fn nuke(project_dir: Option<String>) -> anyhow::Result<()> {
+    let project_dir = project_dir.unwrap_or_else(deployer::default_project_dir);
+
     // ask user to confirm action
     color_println(
         Color::Yellow,
@@ -210,56 +157,14 @@ pub fn nuke() -> anyhow::Result<()> {
 
     color_println(Color::Green, "Running docker-stack-deploy...");
 
-    // run docker-stack-deploy
-    Command::new(DOCKER)
-        .args(["compose", "-f", PATH_DSD_COMPOSE, "up", "-d"])
-        .status()
-        .context("Failed to start docker-stack-deploy")?;
+    deployer::bring_up(&project_dir)?;
 
     color_println(
         Color::Green,
         "Following logs until all containers deployed...",
     );
 
-    let start_time = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .context("Failed to get current time")?
-        .as_secs();
-
-    // follow docker-stack-deploy logs until first update check has happened
-    let mut logs_process = Command::new(DOCKER)
-        .args([
-            "compose",
-            "-f",
-            PATH_DSD_COMPOSE,
-            "logs",
-            "--follow",
-            "--no-log-prefix",
-            "--since",
-            &start_time.to_string(),
-        ])
-        .stdout(Stdio::piped())
-        .spawn()
-        .context("Failed to start following logs")?;
-
-    if let Some(stdout) = logs_process.stdout.take() {
-        let reader = BufReader::new(stdout);
-        for (i, line) in reader.lines().map_while(Result::ok).enumerate() {
-            println!(
-                "[{} | {}] {}",
-                color_println_fmt(Color::Cyan, &get_timestamp()),
-                color_println_fmt(Color::Magenta, DSD),
-                line
-            );
-            if line.contains("Already up to date") && i > 0 {
-                // first update check has happened after deployment
-                break;
-            }
-        }
-    }
-
-    let _ = logs_process.kill();
-    let _ = logs_process.wait();
+    deployer::follow_deploy_logs(&project_dir, true)?;
 
     Ok(())
 }
