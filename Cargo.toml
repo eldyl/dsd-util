@@ -2,7 +2,7 @@
 name = "dsd-util"
 version = "0.2.0"
 edition = "2024"
-authors = ["Dylan Ullrich <dylan@eldyl.org>"]
+authors = ["Dylan Ullrich <dylan@eldyl.dev>"]
 description = "Simple helper for managing docker-stack-deploy containers"
 license = "GPL-3.0-only"
 repository = "https://github.com/eldyl/dsd-util"
