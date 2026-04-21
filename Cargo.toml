@@ -18,3 +18,6 @@ strip = true
 anyhow = "1.0.98"
 chrono = "0.4.41"
 clap = { version = "4.5.39", features = ["derive"] }
+rpassword = "7.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_yml = "0.0.12"
