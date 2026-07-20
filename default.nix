@@ -30,6 +30,8 @@ rustPlatform.buildRustPackage {
     "^\\.github($|/.*)"
   ];
 
+  stripAllList = [ "bin" ];
+
   cargoLock.lockFile = ./Cargo.lock;
 
   env = {
